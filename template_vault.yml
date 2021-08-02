@@ -1,0 +1,115 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: >
+  UMGC CCA670, Project 1, Step 7
+  Template to create a Ballot Online compliant storage vault
+  v1.0.0 20210717 | Kirby Shabaga
+
+Parameters:
+
+  VaultName:
+    Description: 'The Glacier Vault name for Ballot Online testing'
+    Type: String
+    Default: 'umgc-670-p1-s7-storage-vault'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9_-]*'
+
+  VaultBytesPerHour:
+    Description: 'The maximum number of bytes transferred per hour (per region). Default to 1 Gigibyte.'
+    Type: Number
+    Default: 1073742000
+    AllowedValues:
+    - 1073742000
+    - 10737420000
+    - 107374200000
+    - 125000000000
+
+  VaultArchiveAgeInDays:
+    Description: 'Do not allow objects archived for less than X days to be deleted by anyone'
+    Type: Number
+    Default: 365
+    AllowedValues:
+    - 30
+    - 90
+    - 365
+    - 730
+    - 1095
+    - 1460
+    - 1825
+
+  LambdaFunctionName:
+    Default: 'umgc-670-p1-s7-create-vault'
+    Description: 'The Lambda function name for Ballot Online testing'
+    Type: String
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9_-]*'
+
+Resources:
+
+  CustomResource:
+    Type: 'Custom::Vault'
+    Properties:
+      ServiceToken: !GetAtt LambdaFunction.Arn
+      AccountId: !Sub '${AWS::AccountId}'
+      Region: !Sub '${AWS::Region}'
+      VaultName: !Ref VaultName
+      VaultBytesPerHour: !Ref VaultBytesPerHour
+      VaultArchiveAgeInDays: !Ref VaultArchiveAgeInDays
+
+  LambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Ref LambdaFunctionName
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.8
+      Handler: index.handler
+      Code:
+        S3Bucket: 'umgc-cca-670'
+        S3Key: 'custom_resource_vault.zip'
+
+  LambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+      - PolicyName: CreateVault
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource:
+            - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${LambdaFunctionName}:log-stream:*'
+          - Effect: Allow
+            Action:
+            - sns:CreateTopic
+            - sns:DeleteTopic
+            Resource:
+            - !Sub 'arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${VaultName}'
+          - Effect: Allow
+            Action:
+            - glacier:CreateVault
+            - glacier:AddTagsToVault
+            - glacier:SetVaultNotifications
+            - glacier:GetVaultNotifications            
+            - glacier:InitiateVaultLock
+            - glacier:CompleteVaultLock
+            - glacier:SetVaultAccessPolicy
+            - glacier:DeleteVault
+            - glacier:DeleteVaultNotifications
+            Resource:
+            - !Sub 'arn:aws:glacier:${AWS::Region}:${AWS::AccountId}:vaults/${VaultName}'
+          - Effect: Allow
+            Action:
+            - glacier:SetDataRetrievalPolicy
+            Resource:
+            - !Sub 'arn:aws:glacier:${AWS::Region}:${AWS::AccountId}:policies/retrieval-limit-policy'
